@@ -1,11 +1,17 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:fxtm/services/forex_rate_service.dart';
+
 import '../models/forex_pair.dart';
 import '../repositories/forex_repository.dart';
 import '../services/finnhub_service.dart';
 import 'history_page.dart';
 
 class MainPage extends StatefulWidget {
+  const MainPage({super.key});
+
   @override
   _MainPageState createState() => _MainPageState();
 }
@@ -19,13 +25,15 @@ class _MainPageState extends State<MainPage> {
   @override
   void initState() {
     super.initState();
-    _forexRepository = ForexRepository(FinnhubServiceImpl());
-    _loadForexPairs();
-
-    // Simulate real-time price updates every 5 seconds
-    _timer = Timer.periodic(Duration(seconds: 5), (timer) {
-      _updatePrices();
-    });
+    _forexRepository = ForexRepository(
+      finnhubService: FinnhubServiceImpl(
+        apiKey: dotenv.env['FINHUB_API_KEY'] ?? '',
+      ),
+      forexRateService: ForexRateServiceImpl(
+        apiKey: dotenv.env['FOREX_RATE_API_KEY'] ?? '',
+      ),
+    );
+    _initialize();
   }
 
   @override
@@ -34,32 +42,22 @@ class _MainPageState extends State<MainPage> {
     super.dispose();
   }
 
-  void _loadForexPairs() async {
+  void _initialize() async {
     try {
-      List<ForexPair> pairs = await _forexRepository.getForexPairs();
+      final pairs = await _forexRepository.getForexPairs();
       setState(() {
         _forexPairs = pairs;
+      });
+      _forexRepository.subscribeToForexTrades(
+          _forexPairs.map((pair) => pair.symbol).toList());
+      _forexRepository.forexPairs.listen((pairs) {
+        setState(() {
+          _forexPairs = pairs;
+        });
       });
     } catch (e) {
       // Handle error
     }
-  }
-
-  void _updatePrices() {
-    // TODO: Replace this simulation with real-time price updates from Finnhub API
-    setState(() {
-      _forexPairs = _forexPairs.map((pair) {
-        // Simulate price change
-        double change = (0.0001 * (1 - 2 * (DateTime.now().second % 2))).toDouble();
-        double newPrice = pair.currentPrice + change;
-        return ForexPair(
-          symbol: pair.symbol,
-          currentPrice: newPrice,
-          change: change,
-          percentChange: (change / pair.currentPrice) * 100,
-        );
-      }).toList();
-    });
   }
 
   void _onItemTapped(int index) {
@@ -69,7 +67,7 @@ class _MainPageState extends State<MainPage> {
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('This menu item is disabled')),
+        const SnackBar(content: Text('This menu item is disabled')),
       );
     }
   }
@@ -78,7 +76,7 @@ class _MainPageState extends State<MainPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('FXTM Forex Tracker'),
+        title: const Text('FXTM Forex Tracker'),
       ),
       body: _buildBody(),
       bottomNavigationBar: BottomNavigationBar(
@@ -104,26 +102,23 @@ class _MainPageState extends State<MainPage> {
 
   Widget _buildBody() {
     if (_forexPairs.isEmpty) {
-      return Center(child: CircularProgressIndicator());
+      return const Center(child: CircularProgressIndicator());
     } else {
       return ListView.separated(
         itemCount: _forexPairs.length,
-        separatorBuilder: (context, index) => Divider(height: 1),
+        separatorBuilder: (context, index) => const Divider(height: 1),
         itemBuilder: (context, index) {
           final pair = _forexPairs[index];
-
-          // Determine if price went up or down
-          bool isPriceUp = pair.change >= 0;
-
-          // Choose the appropriate arrow icon
-          IconData arrowIcon = isPriceUp ? Icons.arrow_upward : Icons.arrow_downward;
-          Color arrowColor = isPriceUp ? Colors.green : Colors.red;
+          final isPriceUp = pair.change >= 0;
+          final arrowIcon =
+              isPriceUp ? Icons.arrow_upward : Icons.arrow_downward;
+          final arrowColor = isPriceUp ? Colors.green : Colors.red;
 
           return ListTile(
             leading: Icon(arrowIcon, color: arrowColor),
             title: Text(
               pair.symbol,
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
             subtitle: Text(
               'Price: ${pair.currentPrice.toStringAsFixed(4)}',

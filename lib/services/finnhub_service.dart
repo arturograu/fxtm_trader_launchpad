@@ -94,7 +94,7 @@ class ForexTrade {
 
   factory ForexTrade.fromJson(Map<String, dynamic> json) {
     return ForexTrade(
-      price: json['p'],
+      price: json['p'].toDouble(),
       symbol: json['s'],
     );
   }
